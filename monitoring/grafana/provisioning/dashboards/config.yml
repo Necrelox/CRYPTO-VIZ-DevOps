@@ -1,0 +1,22 @@
+apiVersion: 1
+
+providers:
+- name: 'General'
+  orgId: 1
+  folder: ''
+  type: file
+  disableDeletion: false
+  updateIntervalSeconds: 3
+  allowUiUpdates: true
+  options:
+    path: /var/lib/grafana/dashboards/General
+
+- name: 'RedPanda'
+  orgId: 1
+  folder: 'Redpanda'
+  type: file
+  disableDeletion: false
+  updateIntervalSeconds: 3
+  allowUiUpdates: true
+  options:
+    path: /var/lib/grafana/dashboards/Redpanda
