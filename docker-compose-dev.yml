@@ -1,0 +1,264 @@
+version: '3.9'
+services:
+
+  ##### Reverse Proxy #####
+  nginx-manager:
+    image: 'jc21/nginx-proxy-manager:latest'
+    container_name: nginx-manager
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "81:81"
+    environment:
+      DB_MYSQL_HOST: "nginx-manager-database"
+      DB_MYSQL_PORT: "3306"
+      DB_MYSQL_USER: "${NGINX_MANAGER_DB_USER}"
+      DB_MYSQL_PASSWORD: "${NGINX_MANAGER_DB_PASSWORD}"
+      DB_MYSQL_NAME: "nginx-manager"
+    depends_on:
+      nginx-manager-database:
+        condition: service_healthy
+    volumes:
+      - ./nginx-manager/data:/data
+      - ./nginx-manager/letsencrypt:/etc/letsencrypt
+    networks:
+      - proxy
+      - proxy-manager-db
+  #########################
+
+  ####### Red Panda #######
+  red-panda-broker-0:
+    image: docker.redpanda.com/redpandadata/redpanda:v23.2.8
+    container_name: red-panda-broker-0
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://red-panda-broker-0:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://red-panda-broker-0:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr red-panda-broker-0:33145
+      - --advertise-rpc-addr red-panda-broker-0:33145
+      - --smp 1
+      - --memory 1G
+      - --mode dev-container
+      - --default-log-level=debug
+    volumes:
+      - red-panda-broker-0:/var/lib/redpanda/data
+    networks:
+      - red-panda-network
+    expose:
+      - "9092"
+      - "19092"
+      - "8082"
+      - "18082"
+      - "8081"
+      - "18081"
+      - "9644"
+      - "33145"
+    ports:
+      - "19092:19092"
+
+  red-panda-ui:
+    container_name: red-panda-ui
+    image: docker.redpanda.com/redpandadata/console:v2.3.1
+    restart: unless-stopped
+    entrypoint: /bin/sh
+    command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml; /app/console'
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["red-panda-broker-0:9092"]
+          schemaRegistry:
+            enabled: true
+            urls: ["http://red-panda-broker-0:8081"]
+        redpanda:
+          adminApi:
+            enabled: true
+            urls: ["http://red-panda-broker-0:9644"]
+    depends_on:
+      red-panda-broker-0:
+        condition: service_started
+    networks:
+      - red-panda-network
+      - proxy
+    expose:
+      - "8080"
+    ports:
+      - "8080:8080"
+  #########################
+
+  ######## STORE ##########
+  #########################
+
+  ####### Database ########
+  nginx-manager-database:
+    container_name: Nginx-manager-database
+    image: jc21/mariadb-aria:latest
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: "nginx-manager"
+      MYSQL_USER: "${NGINX_MANAGER_DB_USER}"
+      MYSQL_PASSWORD: "${NGINX_MANAGER_DB_PASSWORD}"
+      MYSQL_ROOT_PASSWORD: "${NGINX_MANAGER_DB_PASSWORD}"
+    healthcheck:
+      test: mysqladmin ping -h localhost -u ${NGINX_MANAGER_DB_USER} --password=${NGINX_MANAGER_DB_PASSWORD}
+      timeout: 10s
+      interval: 3s
+      start_period: 5s
+      retries: 10
+    volumes:
+      - ./nginx-manager/database:/var/lib/mysql
+    expose:
+      - "3306"
+    networks:
+      - proxy-manager-db
+    ports:
+      - "3306:3306"
+
+  grafana-database:
+    container_name: Grafana-database
+    image: postgres:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "grafana"
+      POSTGRES_USER: "${GRAFANA_DB_USER}"
+      POSTGRES_PASSWORD: "${GRAFANA_DB_PASSWORD}"
+    healthcheck:
+      test: pg_isready -U ${GRAFANA_DB_USER} -d grafana
+      timeout: 10s
+      interval: 3s
+      start_period: 5s
+      retries: 10
+    networks:
+      - monitoring-grafana
+    ports:
+      - "5050:5432"
+  #########################
+
+  ###### Monitoring #######
+  node-exporter:
+    container_name: node-exporter
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - monitoring-prometheus
+    expose:
+      - "9100"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /dev/disk/:/dev/disk:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+    networks:
+      - monitoring-prometheus
+    expose:
+      - "8080"
+
+  prometheus:
+    container_name: Prometheus
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    depends_on:
+      node-exporter:
+        condition: service_started
+      cadvisor:
+        condition: service_started
+    networks:
+      - monitoring-grafana
+      - monitoring-prometheus
+    expose:
+      - "9090"
+
+  grafana:
+    container_name: Grafana
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    environment:
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_DOMAIN: "${DOMAIN}"
+      GF_SERVER_ROOT_URL: "http://${DOMAIN}/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SERVER_ENABLE_GZIP: "true"
+      GF_DATABASE_TYPE: "postgres"
+      GF_DATABASE_HOST: "grafana-database"
+      GF_DATABASE_NAME: "grafana"
+      GF_DATABASE_USER: "${GRAFANA_DB_USER}"
+      GF_DATABASE_PASSWORD: "${GRAFANA_DB_PASSWORD}"
+      GF_DATABASE_LOG_QUERIES: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_SECURITY_ADMIN_EMAIL: "${EMAIL}"
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_USER}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD}"
+      GF_SECURITY_COOKIE_SECURE: "false"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: "1s"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: "/var/lib/grafana/dashboards/General/node-exporter.json"
+      GF_LOG_MODE: "file"
+      GF_LOG_LEVEL: "critical"
+    healthcheck:
+      test: wget --quiet --tries=1 --spider http://localhost:3000/api/health || exit 1
+      start_period: 10s
+      interval: 5s
+      retries: 5
+    volumes:
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      grafana-database:
+        condition: service_healthy
+    networks:
+      - monitoring-grafana
+      - proxy
+    expose:
+      - "3000"
+  #########################
+
+##### DOCKER NETWORK ####
+networks:
+  monitoring-grafana:
+    driver: bridge
+  monitoring-prometheus:
+    driver: bridge
+  proxy:
+    driver: bridge
+  proxy-manager-db:
+    driver: bridge
+  red-panda-network:
+    driver: bridge
+#########################x
+
+##### DOCKER VOLUME #####
+volumes:
+  prometheus_data:
+  red-panda-broker-0:
+#########################
