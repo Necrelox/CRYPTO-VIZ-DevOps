@@ -1,0 +1,26 @@
+version: '3.8'
+name: clickhouse
+services:
+
+  clickhouse:
+    container_name: clickhouse
+    image: clickhouse/clickhouse-server:head-alpine
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DB: "${CLICKHOUSE_DB}"
+      CLICKHOUSE_USER: "${CLICKHOUSE_USER}"
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD}"
+    volumes:
+      - clickhouse:/var/lib/clickhouse/
+    networks:
+      - clickhouse-network
+    expose:
+      - "8123"
+      - "9000"
+    ports:
+      - "8123:8123"
+networks:
+  clickhouse-network:
+
+volumes:
+  clickhouse:

@@ -1,0 +1,25 @@
+version: '3.8'
+name: processor
+services:
+
+  processor:
+    image: necrelox/crypto-viz-processor:latest
+    container_name: processor
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_HOST: "${CLICKHOUSE_HOST}"
+      CLICKHOUSE_DB: "${CLICKHOUSE_DB}"
+      CLICKHOUSE_USER: "${CLICKHOUSE_USER}"
+      CLICKHOUSE_PASSWORD: "${CLICKHOUSE_PASSWORD}"
+      RED_PANDA_BROKERS: "${RED_PANDA_BROKERS}"
+    networks:
+      - red-panda_broker-network
+      - clickhouse_clickhouse-network
+
+##### DOCKER NETWORK ####
+networks:
+  clickhouse_clickhouse-network:
+    external: true
+  red-panda_broker-network:
+    external: true
+#########################x

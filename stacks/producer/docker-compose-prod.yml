@@ -1,0 +1,19 @@
+version: '3.8'
+name: producer
+services:
+
+  producer:
+    image: necrelox/crypto-viz-producer:latest
+    container_name: producer
+    restart: unless-stopped
+    environment:
+      RED_PANDA_BROKERS: "${RED_PANDA_BROKERS}"
+      NODE_ENV: "production"
+    networks:
+      - red-panda_broker-network
+
+##### DOCKER NETWORK ####
+networks:
+  red-panda_broker-network:
+    external: true
+#########################x
