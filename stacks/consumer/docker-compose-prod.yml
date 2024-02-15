@@ -1,0 +1,21 @@
+version: '3.8'
+name: consumer
+services:
+
+  consumer:
+    image: necrelox/crypto-viz-consumer:latest
+    container_name: consumer
+    restart: unless-stopped
+    environment:
+      RED_PANDA_BROKERS: "${RED_PANDA_BROKERS}"
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+      NODE_ENV: "production"
+    networks:
+      - red-panda_broker-network
+
+
+##### DOCKER NETWORK ####
+networks:
+  red-panda_broker-network:
+#########################x

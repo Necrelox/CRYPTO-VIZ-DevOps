@@ -1,0 +1,131 @@
+version: '3.8'
+name: monitoring
+services:
+
+####### Database ########
+  grafana-database:
+    container_name: Grafana-database
+    image: postgres:latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "grafana"
+      POSTGRES_USER: "${GRAFANA_DB_USER}"
+      POSTGRES_PASSWORD: "${GRAFANA_DB_PASSWORD}"
+    networks:
+      - grafana-network
+    expose:
+      - "5432"
+#########################
+
+###### Monitoring #######
+  node-exporter:
+    container_name: node-exporter
+    image: prom/node-exporter:latest
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - prometheus-network
+    expose:
+      - "9100"
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.0
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /dev/disk/:/dev/disk:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+    networks:
+      - prometheus-network
+    expose:
+      - "8080"
+
+  prometheus:
+    container_name: Prometheus
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    depends_on:
+      node-exporter:
+        condition: service_started
+      cadvisor:
+        condition: service_started
+    networks:
+      - grafana-network
+      - prometheus-network
+      - red-panda_broker-network
+    expose:
+      - "9090"
+
+  grafana:
+    container_name: Grafana
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    environment:
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_DOMAIN: "${DOMAIN}"
+      GF_SERVER_ROOT_URL: "http://${DOMAIN}/grafana/"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SERVER_ENABLE_GZIP: "true"
+      GF_DATABASE_TYPE: "postgres"
+      GF_DATABASE_HOST: "grafana-database"
+      GF_DATABASE_NAME: "grafana"
+      GF_DATABASE_USER: "${GRAFANA_DB_USER}"
+      GF_DATABASE_PASSWORD: "${GRAFANA_DB_PASSWORD}"
+      GF_DATABASE_LOG_QUERIES: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_SECURITY_ADMIN_EMAIL: "${EMAIL}"
+      GF_SECURITY_ADMIN_USER: "${GRAFANA_USER}"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_PASSWORD}"
+      GF_SECURITY_COOKIE_SECURE: "false"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: "1s"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: "/var/lib/grafana/dashboards/General/node-exporter.json"
+      GF_LOG_MODE: "file"
+      GF_LOG_LEVEL: "critical"
+    volumes:
+      - ./config/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - grafana-database
+    networks:
+      - grafana-network
+      - portainer_proxy-network
+    expose:
+      - "3000"
+#########################
+
+##### DOCKER VOLUME #####
+volumes:
+  prometheus_data:
+#########################
+
+##### DOCKER NETWORK ####
+networks:
+  grafana-network:
+  prometheus-network:
+  portainer_proxy-network:
+    external: true
+  red-panda_broker-network:
+    external: true
+#########################

@@ -1,0 +1,69 @@
+version: '3.8'
+name: portainer
+services:
+
+  ##### Reverse Proxy #####
+  nginx-manager:
+    image: jc21/nginx-proxy-manager:2.10.4
+    container_name: nginx-manager
+    restart: unless-stopped
+    environment:
+      DB_MYSQL_HOST: "nginx-manager-database"
+      DB_MYSQL_PORT: "3306"
+      DB_MYSQL_USER: "${NGINX_MANAGER_DB_USER}"
+      DB_MYSQL_PASSWORD: "${NGINX_MANAGER_DB_PASSWORD}"
+      DB_MYSQL_NAME: "nginx-manager"
+    depends_on:
+      - nginx-manager-database
+    volumes:
+      - ./nginx-manager/data:/data
+      - ./nginx-manager/letsencrypt:/etc/letsencrypt
+    networks:
+      - proxy-network
+      - proxy-db-network
+    ports:
+      - "80:80"
+      - "443:443"
+      - "81:81"
+  #########################
+
+  ####### Database ########
+  nginx-manager-database:
+    container_name: Nginx-manager-database
+    image: jc21/mariadb-aria:latest
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: "nginx-manager"
+      MYSQL_USER: "${NGINX_MANAGER_DB_USER}"
+      MYSQL_PASSWORD: "${NGINX_MANAGER_DB_PASSWORD}"
+      MYSQL_ROOT_PASSWORD: "${NGINX_MANAGER_DB_PASSWORD}"
+    volumes:
+      - ./nginx-manager/database:/var/lib/mysql
+    expose:
+      - "3306"
+    networks:
+      - proxy-network
+  #########################
+
+  ####### Portainer #######
+  portainer:
+    image: portainer/portainer-ee:alpine
+    container_name: portainer
+    restart: unless-stopped
+    command: -H unix:///var/run/docker.sock
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./portainer-data:/data
+    expose:
+      - "9000"
+      - "9443"
+      - "8000"
+    networks:
+      - proxy-network
+  #########################
+
+##### DOCKER NETWORK ####
+networks:
+  proxy-network:
+  proxy-db-network:
+#########################
