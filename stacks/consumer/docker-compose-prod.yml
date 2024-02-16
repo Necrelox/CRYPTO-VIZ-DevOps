@@ -18,4 +18,5 @@ services:
 ##### DOCKER NETWORK ####
 networks:
   red-panda_broker-network:
+    external: true
 #########################x
