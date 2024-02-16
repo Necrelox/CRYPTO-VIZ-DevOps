@@ -14,12 +14,9 @@ services:
       RED_PANDA_BROKERS: "${RED_PANDA_BROKERS}"
     networks:
       - red-panda_broker-network
-      - clickhouse_clickhouse-network
 
 ##### DOCKER NETWORK ####
 networks:
-  clickhouse_clickhouse-network:
-    external: true
   red-panda_broker-network:
     external: true
 #########################x
